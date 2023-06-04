@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+using namespace std;
 
 class Reader;
 class Writer;
@@ -13,6 +14,11 @@ class ByteStream
 protected:
   uint64_t capacity_;
   // Please add any additional state to the ByteStream here, and not to the Writer and Reader interfaces.
+  string buffer_{};
+  uint64_t bytes_pushed_{0};
+  uint64_t bytes_popped_{0};
+  bool error_{false};
+  bool closed_{false};
 
 public:
   explicit ByteStream( uint64_t capacity );
