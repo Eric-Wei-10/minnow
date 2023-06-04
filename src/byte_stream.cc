@@ -13,7 +13,7 @@ void Writer::push( string data )
   uint64_t available_length = available_capacity();
   uint64_t length = data_length >= available_length ? available_length : data_length;
 
-  buffer_.append(data.substr(0, length));
+  buffer_.append( data.substr( 0, length ) );
   bytes_pushed_ += length;
 }
 
@@ -50,7 +50,7 @@ uint64_t Writer::bytes_pushed() const
 string_view Reader::peek() const
 {
   // Your code here.
-  return string_view{&buffer_[0], buffer_.length()};
+  return string_view { &buffer_[0], buffer_.length() };
 }
 
 bool Reader::is_finished() const
@@ -71,7 +71,7 @@ void Reader::pop( uint64_t len )
   uint64_t buffer_length = buffer_.length();
   uint64_t length = len >= buffer_length ? buffer_length : len;
 
-  buffer_.erase(0, length);
+  buffer_.erase( 0, length );
   bytes_popped_ += length;
 }
 

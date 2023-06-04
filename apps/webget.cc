@@ -10,10 +10,10 @@ using namespace std;
 void get_URL( const string& host, const string& path )
 {
   TCPSocket socket;
-  Address address(host, "http");
+  Address address( host, "http" );
 
-  socket.connect(address);
-  
+  socket.connect( address );
+
   string request;
 
   request += "GET " + path + " HTTP/1.1\r\n";
@@ -21,11 +21,11 @@ void get_URL( const string& host, const string& path )
   request += "Connection: close\r\n";
   request += "\r\n";
 
-  socket.write(request);
+  socket.write( request );
 
-  while (!socket.eof()) {
+  while ( !socket.eof() ) {
     string response;
-    socket.read(response);
+    socket.read( response );
     cout << response;
   }
 
