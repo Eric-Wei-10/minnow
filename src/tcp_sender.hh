@@ -3,11 +3,21 @@
 #include "byte_stream.hh"
 #include "tcp_receiver_message.hh"
 #include "tcp_sender_message.hh"
+#include <iostream>
 
 class TCPSender
 {
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
+  uint64_t abs_ackno_{0};  // Next byte to be acked.
+  uint64_t abs_seqno_{0};  // Next byte to be sent.
+  uint16_t window_size_{0}; // Receiver's window size.
+  // Messages that has been sent. (used for 'maybe_send').
+  queue<TCPSenderMessage> messages_out_{};
+  // Messages that has been sent. (used for 'receive' and 'tick').
+  queue<TCPSenderMessage> outstanding_{};
+  bool syn_sent_{false};    // Whether SYN has been sent.
+  bool fin_sent_{false};    // Whether FIN has been sent.
 
 public:
   /* Construct TCP sender with given default Retransmission Timeout and possible ISN */
