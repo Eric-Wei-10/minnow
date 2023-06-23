@@ -61,6 +61,8 @@ void TCPSender::push( Reader& outbound_stream )
   uint64_t bytes_can_send = window_size_ - sequence_numbers_in_flight();
   uint64_t bytes_can_read = outbound_stream.bytes_buffered();
 
+  cout << bytes_can_send << " " << bytes_can_read << endl;
+
   // Buffer is empty.
   if (bytes_can_read == 0) {
     if (outbound_stream.is_finished()) {
@@ -84,14 +86,36 @@ void TCPSender::push( Reader& outbound_stream )
 
   // Buffer is not empty.
   uint64_t bytes_to_send = bytes_can_send < bytes_can_read ? bytes_can_send : bytes_can_read;
+
   while (bytes_to_send) {
     TCPSenderMessage msg;
     uint64_t payload_size = 
       bytes_to_send < TCPConfig::MAX_PAYLOAD_SIZE ? bytes_to_send : TCPConfig::MAX_PAYLOAD_SIZE;
-
+    string_view sv = outbound_stream.peek();
+    string payload = {sv.begin(), sv.end()};
+    
     msg.seqno = Wrap32::wrap(abs_seqno_, isn_);
-    // msg.payload = Buffer(outbound_stream.peek().data());
+    msg.payload = Buffer(payload.substr(0, payload_size));
+    outbound_stream.pop(payload_size);
+
+    // If stream is finished and there is enough space, send FIN.
+    if (payload_size < bytes_can_send && outbound_stream.is_finished()) {
+      fin_sent_ = true;
+      msg.FIN = true;
+    }
+
+    messages_out_.push(msg);
+    outstanding_.push(msg);
+
+    // Update abs_seqno.
+    abs_seqno_ += msg.sequence_length();
+
+    // Update information about future data.
+    bytes_can_send -= payload_size;
+    bytes_to_send -= payload_size;
   }
+
+  return;
 }
 
 TCPSenderMessage TCPSender::send_empty_message() const
@@ -106,12 +130,9 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 {
   // Your code here.
   uint64_t new_ackno = msg.ackno.value().unwrap(isn_, abs_ackno_);
-  cout << "here " << new_ackno << endl;
 
   if (new_ackno < abs_ackno_)
     return;
-
-  cout << "here1" << endl;
   
   while (!outstanding_.empty()) {
     TCPSenderMessage message = outstanding_.front();
