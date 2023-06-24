@@ -11,7 +11,7 @@ class TCPSender
   uint64_t initial_RTO_ms_;
   uint64_t abs_ackno_{0};  // Next byte to be acked.
   uint64_t abs_seqno_{0};  // Next byte to be sent.
-  uint16_t window_size_{0}; // Receiver's window size.
+  uint16_t window_size_;   // Receiver's window size.
   // Messages that has been sent. (used for 'maybe_send').
   queue<TCPSenderMessage> messages_out_{};
   // Messages that has been sent. (used for 'receive' and 'tick').

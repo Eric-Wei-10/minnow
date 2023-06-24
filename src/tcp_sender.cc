@@ -7,7 +7,8 @@ using namespace std;
 
 /* TCPSender constructor (uses a random ISN if none given) */
 TCPSender::TCPSender( uint64_t initial_RTO_ms, optional<Wrap32> fixed_isn )
-  : isn_( fixed_isn.value_or( Wrap32 { random_device()() } ) ), initial_RTO_ms_( initial_RTO_ms )
+  : isn_( fixed_isn.value_or( Wrap32 { random_device()() } ) ), initial_RTO_ms_( initial_RTO_ms ),
+  window_size_(TCPConfig::DEFAULT_CAPACITY)
 {}
 
 uint64_t TCPSender::sequence_numbers_in_flight() const
@@ -76,11 +77,53 @@ void TCPSender::push( Reader& outbound_stream )
     return;
   }
 
+  // If window size is 0, send segment with payload 1.
+  if (window_size_ == 0) {
+    if (outstanding_.empty()) {
+      TCPSenderMessage msg;
+
+      msg.seqno = Wrap32::wrap(abs_seqno_, isn_);
+
+      if (outbound_stream.bytes_buffered() != 0) {
+        // Buffer is not empty.
+        string_view sv = outbound_stream.peek();
+        string payload = {sv.begin(), sv.end()};
+
+        msg.payload = payload.substr(0, 1);
+        outbound_stream.pop(1);
+      } else {
+        // Buffer is empty.
+        if (outbound_stream.is_finished()) {
+          // Stream is closed and FIN has not been sent.
+          fin_sent_ = true;
+          msg.FIN = true;
+        } else {
+          // Stream is not closed.
+          return;
+        }
+      }
+
+      messages_out_.push(msg);
+      outstanding_.push(msg);
+
+      // Start timer.
+      if (!timer_started_) {
+        timer_started_ = true;
+        consecutive_retransmissions_ = 0;
+        timer_countdown_ = initial_RTO_ms_;
+      }
+
+      abs_seqno_ += 1;
+
+      return;
+    } else {
+      return;
+    }
+  }
+
   // Send messages according to buffer and window size.
   uint64_t bytes_can_send = window_size_ - sequence_numbers_in_flight();
   uint64_t bytes_can_read = outbound_stream.bytes_buffered();
-
-  cout << bytes_can_send << " " << bytes_can_read << endl;
 
   // Buffer is empty.
   if (bytes_can_read == 0) {
@@ -126,7 +169,6 @@ void TCPSender::push( Reader& outbound_stream )
 
     // If stream is finished and there is enough space, send FIN.
     if (payload_size < bytes_can_send && outbound_stream.is_finished()) {
-      cout << "send a fin" << endl;
       fin_sent_ = true;
       msg.FIN = true;
     }
@@ -177,7 +219,7 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
   }
 
   // Ignore invalid messages.
-  if (new_ackno < abs_ackno_ || new_ackno > abs_seqno_)
+  if (window_size_ != 0 && (new_ackno < abs_ackno_ || new_ackno > abs_seqno_))
     return;
   
   while (!outstanding_.empty()) {
@@ -228,7 +270,12 @@ void TCPSender::tick( uint64_t ms_since_last_tick )
     }
 
     // Consecutive retx doesn't exceeds limit, double backoff.
-    timer_countdown_ = initial_RTO_ms_ << consecutive_retransmissions_;
+    if (window_size_ != 0) {
+      timer_countdown_ = initial_RTO_ms_ << consecutive_retransmissions_;
+    } else {
+      timer_countdown_ = initial_RTO_ms_;
+      consecutive_retransmissions_ -= 1;  // When window size is 0, this message should be resent forever.
+    }
 
     // Only resend one message each time 'tick' is called.
     if (!resend) {
