@@ -19,7 +19,7 @@ uint64_t TCPSender::sequence_numbers_in_flight() const
 uint64_t TCPSender::consecutive_retransmissions() const
 {
   // Your code here.
-  return {};
+  return consecutive_retransmissions_;
 }
 
 optional<TCPSenderMessage> TCPSender::maybe_send()
@@ -45,14 +45,33 @@ void TCPSender::push( Reader& outbound_stream )
     msg.SYN = true;
     msg.seqno = Wrap32::wrap(abs_seqno_, isn_);
 
+    // Send FIN if there is nothing to send.
+    if (outbound_stream.is_finished() && window_size_ != 0) {
+      fin_sent_ = true;
+      msg.FIN = true;
+    }
+
     messages_out_.push(msg);
     outstanding_.push(msg);
+    
+    // Start timer.
+    if (!timer_started_) {
+      timer_started_ = true;
+      consecutive_retransmissions_ = 0;
+      timer_countdown_ = initial_RTO_ms_;
+    }
 
     abs_seqno_ += msg.sequence_length();
 
     return;
   }
 
+  // Suppose SYN is sent but not acked, connection is not established.
+  if (!syn_acked_) {
+    return;
+  }
+
+  // If FIN is sent, then the stream is closed.
   if (fin_sent_) {
     return;
   }
@@ -65,7 +84,7 @@ void TCPSender::push( Reader& outbound_stream )
 
   // Buffer is empty.
   if (bytes_can_read == 0) {
-    if (outbound_stream.is_finished()) {
+    if (outbound_stream.is_finished() && bytes_can_send != 0) {
       // Send FIN message.
       fin_sent_ = true;
 
@@ -75,6 +94,13 @@ void TCPSender::push( Reader& outbound_stream )
 
       messages_out_.push(msg);
       outstanding_.push(msg);
+
+      // Start timer.
+      if (!timer_started_) {
+        timer_started_ = true;
+        consecutive_retransmissions_ = 0;
+        timer_countdown_ = initial_RTO_ms_;
+      }
 
       abs_seqno_ += msg.sequence_length();
 
@@ -93,19 +119,27 @@ void TCPSender::push( Reader& outbound_stream )
       bytes_to_send < TCPConfig::MAX_PAYLOAD_SIZE ? bytes_to_send : TCPConfig::MAX_PAYLOAD_SIZE;
     string_view sv = outbound_stream.peek();
     string payload = {sv.begin(), sv.end()};
-    
+
     msg.seqno = Wrap32::wrap(abs_seqno_, isn_);
     msg.payload = Buffer(payload.substr(0, payload_size));
     outbound_stream.pop(payload_size);
 
     // If stream is finished and there is enough space, send FIN.
     if (payload_size < bytes_can_send && outbound_stream.is_finished()) {
+      cout << "send a fin" << endl;
       fin_sent_ = true;
       msg.FIN = true;
     }
 
     messages_out_.push(msg);
     outstanding_.push(msg);
+
+    // Start timer.
+    if (!timer_started_) {
+      timer_started_ = true;
+      consecutive_retransmissions_ = 0;
+      timer_countdown_ = initial_RTO_ms_;
+    }
 
     // Update abs_seqno.
     abs_seqno_ += msg.sequence_length();
@@ -129,9 +163,21 @@ TCPSenderMessage TCPSender::send_empty_message() const
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
   // Your code here.
-  uint64_t new_ackno = msg.ackno.value().unwrap(isn_, abs_ackno_);
+  uint64_t new_ackno;
 
-  if (new_ackno < abs_ackno_)
+  if (msg.ackno.has_value()) {
+    // If msg contains ackno, get it and go through codes below.
+    new_ackno = msg.ackno.value().unwrap(isn_, abs_ackno_);
+    // Ack SYN.
+    if (!syn_acked_ && new_ackno > 0) syn_acked_ = true;
+  } else {
+    // If msg doesn't contains ackno, update window size and return.
+    window_size_ = msg.window_size;
+    return;
+  }
+
+  // Ignore invalid messages.
+  if (new_ackno < abs_ackno_ || new_ackno > abs_seqno_)
     return;
   
   while (!outstanding_.empty()) {
@@ -146,6 +192,15 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
     }
   }
 
+  if (new_ackno > abs_ackno_) {
+    if (outstanding_.empty()) {
+      timer_started_ = false;
+    } else {
+      consecutive_retransmissions_ = 0;
+      timer_countdown_ = initial_RTO_ms_;
+    }
+  }
+
   abs_ackno_ = new_ackno;
   window_size_ = msg.window_size;
 
@@ -155,5 +210,34 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 void TCPSender::tick( uint64_t ms_since_last_tick )
 {
   // Your code here.
-  (void)ms_since_last_tick;
+  // If timer is not started, simply return.
+  if (!timer_started_) return;
+
+  uint64_t tick_countdown = ms_since_last_tick;
+  bool resend = false;
+
+  while (tick_countdown >= timer_countdown_) {
+    // Update tick countdown and retx count.
+    tick_countdown -= timer_countdown_;
+    consecutive_retransmissions_ += 1;
+
+    // Consecutive retx exceeds limit, stop timer and return.
+    if (consecutive_retransmissions_ > TCPConfig::MAX_RETX_ATTEMPTS) {
+      timer_started_ = false;
+      return;
+    }
+
+    // Consecutive retx doesn't exceeds limit, double backoff.
+    timer_countdown_ = initial_RTO_ms_ << consecutive_retransmissions_;
+
+    // Only resend one message each time 'tick' is called.
+    if (!resend) {
+      resend = true;
+      messages_out_.push(outstanding_.front());
+    }
+  }
+
+  timer_countdown_ -= tick_countdown;
+
+  return;
 }

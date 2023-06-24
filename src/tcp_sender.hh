@@ -17,7 +17,12 @@ class TCPSender
   // Messages that has been sent. (used for 'receive' and 'tick').
   queue<TCPSenderMessage> outstanding_{};
   bool syn_sent_{false};    // Whether SYN has been sent.
+  bool syn_acked_{false};   // Whether SYN has been acked.
   bool fin_sent_{false};    // Whether FIN has been sent.
+  // Timer variables below
+  bool timer_started_{false};
+  uint64_t consecutive_retransmissions_{0};
+  uint64_t timer_countdown_{0};
 
 public:
   /* Construct TCP sender with given default Retransmission Timeout and possible ISN */
