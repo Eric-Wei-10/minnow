@@ -22,24 +22,86 @@ NetworkInterface::NetworkInterface( const EthernetAddress& ethernet_address, con
 // Address::ipv4_numeric() method.
 void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Address& next_hop )
 {
-  (void)dgram;
-  (void)next_hop;
+  auto cache_it = arp_cache_.find(next_hop.ipv4_numeric());
+  auto waitlist_it = arp_waitlist_.find(next_hop.ipv4_numeric());
+
+  if (cache_it != arp_cache_.end()) {
+    // If the host doesn't know target MAC address, send ARP message.
+    if (waitlist_it == arp_waitlist_.end()) {
+      // No waitlist item indicates that no ARP request recently.
+      // Create item, push dgram and send ARP message.
+
+    } else {
+      // If there is ARP request recently, push dgram into 'waitings'.
+
+      if (waitlist_it->second.timer > NetworkInterface::ARP_INTERVAL) {
+        // If ARP request is more than 5s ago, retx it.
+      }
+    }
+  } else {
+    // If the host knows target MAC address, send dgram.
+  }
 }
 
 // frame: the incoming Ethernet frame
 optional<InternetDatagram> NetworkInterface::recv_frame( const EthernetFrame& frame )
 {
-  (void)frame;
-  return {};
+  if (!(frame.header.dst == ethernet_address_ || frame.header.dst == ETHERNET_BROADCAST)) {
+    // Destination of frame is not this host, ignore it.
+    return nullopt;
+  }
+
+  if (frame.header.type == EthernetHeader::TYPE_IPv4) {
+    // Payload is IPv4.
+    InternetDatagram dgram;
+    if (parse(dgram, frame.payload)) {
+      // If no error, return dgram.
+      return dgram;
+    }
+  } else if (frame.header.type == EthernetHeader::TYPE_ARP) {
+    ARPMessage arp;
+    if (parse(arp, frame.payload)) {
+      // Insert or update cache item and clean waitlist.
+
+      if (arp.opcode == ARPMessage::OPCODE_REQUEST && arp.target_ip_address == ip_address_.ipv4_numeric()) {
+        // Send ARP reply.
+      }
+    }
+  }
+
+  return nullopt;
 }
 
 // ms_since_last_tick: the number of milliseconds since the last call to this method
 void NetworkInterface::tick( const size_t ms_since_last_tick )
 {
-  (void)ms_since_last_tick;
+  for (auto cache_it = arp_cache_.begin(); cache_it != arp_cache_.end(); ) {
+    // Iterately decrease ttl.
+    if (cache_it->second.ttl < ms_since_last_tick) {
+      // If ttl timeout, remove item.
+      auto tmp = cache_it;
+      cache_it++;
+      arp_cache_.erase(tmp);
+    } else {
+      // If not timeout, decrease ttl.
+      cache_it->second.ttl -= ms_since_last_tick;
+      cache_it++;
+    }
+  }
+
+  for (auto waitlist_it = arp_waitlist_.begin(); waitlist_it != arp_waitlist_.end(); waitlist_it++) {
+    // Iterately increase timer.
+    waitlist_it->second.timer += ms_since_last_tick;
+  }
 }
 
 optional<EthernetFrame> NetworkInterface::maybe_send()
 {
-  return {};
+  if (frames_out_.empty()) {
+    return nullopt;
+  } else {
+    EthernetFrame eframe = frames_out_.front();
+    frames_out_.pop();
+    return eframe;
+  }
 }

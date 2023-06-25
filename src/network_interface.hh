@@ -10,6 +10,8 @@
 #include <queue>
 #include <unordered_map>
 #include <utility>
+#include <map>
+using namespace std;
 
 // A "network interface" that connects IP (the internet layer, or network layer)
 // with Ethernet (the network access layer, or link layer).
@@ -40,6 +42,26 @@ private:
 
   // IP (known as Internet-layer or network-layer) address of the interface
   Address ip_address_;
+
+  static const uint32_t ARP_INTERVAL = 5000;
+
+  static const uint32_t CACHE_ITEM_TTL = 30000;
+
+  queue<EthernetFrame> frames_out_{};
+
+  struct CacheItem {
+    EthernetAddress ethernet_address;
+    uint32_t ttl;
+  };
+
+  map<uint32_t, CacheItem> arp_cache_{};
+
+  struct WaitlistItem {
+    queue<InternetDatagram> waitings;
+    uint32_t timer;
+  };
+
+  map<uint32_t, WaitlistItem> arp_waitlist_{};
 
 public:
   // Construct a network interface with given Ethernet (network-access-layer) and IP (internet-layer)
