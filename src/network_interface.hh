@@ -1,16 +1,17 @@
 #pragma once
 
 #include "address.hh"
+#include "arp_message.hh"
 #include "ethernet_frame.hh"
 #include "ipv4_datagram.hh"
 
 #include <iostream>
 #include <list>
+#include <map>
 #include <optional>
 #include <queue>
 #include <unordered_map>
 #include <utility>
-#include <map>
 using namespace std;
 
 // A "network interface" that connects IP (the internet layer, or network layer)
@@ -47,21 +48,34 @@ private:
 
   static const uint32_t CACHE_ITEM_TTL = 30000;
 
-  queue<EthernetFrame> frames_out_{};
+  queue<EthernetFrame> frames_out_ {};
 
-  struct CacheItem {
-    EthernetAddress ethernet_address;
-    uint32_t ttl;
+  struct CacheItem
+  {
+    EthernetAddress ethernet_address {};
+    uint32_t ttl { NetworkInterface::CACHE_ITEM_TTL };
   };
 
-  map<uint32_t, CacheItem> arp_cache_{};
+  map<uint32_t, CacheItem> arp_cache_ {};
 
-  struct WaitlistItem {
-    queue<InternetDatagram> waitings;
-    uint32_t timer;
+  struct WaitlistItem
+  {
+    queue<InternetDatagram> waitings {};
+    uint32_t timer { 0 };
   };
 
-  map<uint32_t, WaitlistItem> arp_waitlist_{};
+  map<uint32_t, WaitlistItem> arp_waitlist_ {};
+
+  ARPMessage make_arp( const uint16_t opcode,
+                       const EthernetAddress sender_ethernet_address,
+                       const uint32_t& sender_ip_address,
+                       const EthernetAddress target_ethernet_address,
+                       const uint32_t& target_ip_address );
+
+  EthernetFrame make_frame( const EthernetAddress& src,
+                            const EthernetAddress& dst,
+                            const uint16_t type,
+                            vector<Buffer> payload );
 
 public:
   // Construct a network interface with given Ethernet (network-access-layer) and IP (internet-layer)
