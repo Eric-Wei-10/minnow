@@ -11,10 +11,10 @@ using namespace std;
 // next_hop: The IP address of the next hop. Will be empty if the network is directly attached to the router (in
 //    which case, the next hop address should be the datagram's final destination).
 // interface_num: The index of the interface to send the datagram out on.
-void Router::add_route( const uint32_t route_prefix,
-                        const uint8_t prefix_length,
-                        const optional<Address> next_hop,
-                        const size_t interface_num )
+void Router::add_route( uint32_t route_prefix,
+                        uint8_t prefix_length,
+                        optional<Address> next_hop,
+                        size_t interface_num )
 {
   cerr << "DEBUG: adding route " << Address::from_ipv4_numeric( route_prefix ).ip() << "/"
        << static_cast<int>( prefix_length ) << " => " << ( next_hop.has_value() ? next_hop->ip() : "(direct)" )

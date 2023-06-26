@@ -111,6 +111,19 @@ optional<InternetDatagram> NetworkInterface::recv_frame( const EthernetFrame& fr
       auto cache_it = arp_cache_.find( arp.sender_ip_address );
       auto waitlist_it = arp_waitlist_.find( arp.sender_ip_address );
 
+      if ( arp.opcode == ARPMessage::OPCODE_REQUEST && arp.target_ip_address == ip_address_.ipv4_numeric() ) {
+        // Send ARP reply.
+        ARPMessage arp_reply = make_arp( ARPMessage::OPCODE_REPLY,
+                                         ethernet_address_,
+                                         ip_address_.ipv4_numeric(),
+                                         arp.sender_ethernet_address,
+                                         arp.sender_ip_address );
+        EthernetFrame frame_ = make_frame(
+          ethernet_address_, arp.sender_ethernet_address, EthernetHeader::TYPE_ARP, serialize( arp_reply ) );
+
+        frames_out_.push( frame_ );
+      }
+
       if ( cache_it == arp_cache_.end() ) {
         // Insert cache item.
         CacheItem item;
@@ -136,19 +149,6 @@ optional<InternetDatagram> NetworkInterface::recv_frame( const EthernetFrame& fr
       }
 
       arp_waitlist_.erase( waitlist_it->first );
-
-      if ( arp.opcode == ARPMessage::OPCODE_REQUEST && arp.target_ip_address == ip_address_.ipv4_numeric() ) {
-        // Send ARP reply.
-        ARPMessage arp_reply = make_arp( ARPMessage::OPCODE_REPLY,
-                                         ethernet_address_,
-                                         ip_address_.ipv4_numeric(),
-                                         arp.sender_ethernet_address,
-                                         arp.sender_ip_address );
-        EthernetFrame frame_ = make_frame(
-          ethernet_address_, arp.sender_ethernet_address, EthernetHeader::TYPE_ARP, serialize( arp_reply ) );
-
-        frames_out_.push( frame_ );
-      }
     }
   }
 
