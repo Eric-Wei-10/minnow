@@ -48,12 +48,27 @@ public:
   }
 };
 
+struct RouteEntry {
+public:
+  uint32_t _route_prefix;
+  uint8_t _prefix_length;
+  optional<Address> _next_hop;
+  size_t _interface_num;
+  RouteEntry(uint32_t route_prefix, uint8_t prefix_length, std::optional<Address> next_hop, size_t interface_num):
+  _route_prefix(route_prefix), _prefix_length(prefix_length), _next_hop(next_hop), _interface_num(interface_num)
+  {}
+};
+
 // A router that has multiple network interfaces and
 // performs longest-prefix-match routing between them.
 class Router
 {
   // The router's collection of network interfaces
   std::vector<AsyncNetworkInterface> interfaces_ {};
+
+  vector<RouteEntry> routing_table_{};
+
+  void route_one_datagram(InternetDatagram &dgram);
 
 public:
   // Add an interface to the router
